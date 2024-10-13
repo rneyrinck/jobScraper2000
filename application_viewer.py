@@ -17,8 +17,8 @@ from PyQt5.QtWidgets import (
     QPushButton, QLabel, QMessageBox, QTextEdit, QScrollArea, QComboBox, QMenuBar, QAction,
     QFileDialog, QLineEdit, QSpinBox, QDialogButtonBox, QDialog, QProgressDialog
 )
-from PyQt5.QtCore import Qt, QMimeData, QUrl
-from PyQt5.QtGui import QDrag
+from PyQt5.QtCore import Qt, QMimeData, QUrl, QTimer
+from PyQt5.QtGui import QDrag, QFont, QPalette, QColor
 
 # Load spaCy language model
 try:
@@ -83,6 +83,102 @@ applicant_info = {
 }
 
 
+class Toast(QWidget):
+    """A simple toast notification that disappears after a short duration."""
+
+    def __init__(self, message, parent=None, duration=3000):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(300, 50)
+
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        label = QLabel(message)
+        label.setStyleSheet("""
+            QLabel {
+                background-color: rgba(0, 0, 0, 180);
+                color: white;
+                border-radius: 10px;
+                padding: 10px;
+                font-size: 14px;
+            }
+        """)
+        label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+
+        # Center the toast at the bottom of the parent window
+        if parent:
+            parent_rect = parent.geometry()
+            self.move(
+                parent_rect.x() + (parent_rect.width() - self.width()) // 2,
+                parent_rect.y() + parent_rect.height() - self.height() - 50
+            )
+        else:
+            # Center of the screen if no parent
+            screen = QApplication.primaryScreen().geometry()
+            self.move(
+                (screen.width() - self.width()) // 2,
+                screen.height() - self.height() - 100
+            )
+
+        # Timer to close the toast
+        QTimer.singleShot(duration, self.close)
+
+
+class InstructionsDialog(QDialog):
+    """A dialog that displays detailed instructions to the user."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle('Application Viewer Instructions')
+        self.resize(600, 400)
+        self.create_widgets()
+
+    def create_widgets(self):
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        instructions = """
+        <h2>Welcome to the Application Viewer!</h2>
+        <p>This application helps you manage and tailor your job applications efficiently. Here's how to get started:</p>
+        <h3>1. Upload Your Resume</h3>
+        <p>Navigate to <b>File > Upload Resume</b> to upload your base resume template in <i>.docx</i> format. This template will be customized for each job application.</p>
+
+        <h3>2. Generate Applications</h3>
+        <p>Go to <b>File > Generate Applications</b> to fetch job listings based on your specified keywords and location. Enter your search parameters in the dialog that appears.</p>
+
+        <h3>3. Review Applications</h3>
+        <p>Once applications are generated, they will appear in the main table. Click on any application to view details, open the job link, or access tailored resumes and cover letters.</p>
+
+        <h3>4. Update Application Status</h3>
+        <p>Use the <b>Status</b> dropdown to update the status of each application. Changes are saved immediately and reflected in the table.</p>
+
+        <h3>5. Access Help Anytime</h3>
+        <p>For detailed instructions, navigate to <b>Help > Instructions</b> from the menu bar.</p>
+
+        <h3>6. Additional Features</h3>
+        <ul>
+            <li><b>Drag Resume/Cover Letter:</b> Easily attach tailored documents to your applications.</li>
+            <li><b>Preview Documents:</b> View your tailored resume and cover letter before sending.</li>
+            <li><b>Copy Information:</b> Quickly copy skills, education, and other details to your clipboard.</li>
+        </ul>
+
+        <p>We hope this tool streamlines your job application process and helps you land your desired position!</p>
+        """
+
+        self.text_edit = QTextEdit()
+        self.text_edit.setReadOnly(True)
+        self.text_edit.setHtml(instructions)
+        layout.addWidget(self.text_edit)
+
+        # Close Button
+        self.close_button = QPushButton('Close')
+        self.close_button.clicked.connect(self.accept)
+        layout.addWidget(self.close_button)
+
+
 class ApplicationViewer(QWidget):
     def __init__(self):
         super().__init__()
@@ -95,22 +191,38 @@ class ApplicationViewer(QWidget):
         self.load_config()
         self.create_widgets()
         self.load_data()
+        self.check_first_run()  # Check if it's the first run
 
     def load_config(self):
         try:
             with open('config.json', 'r') as f:
                 config = json.load(f)
                 self.resume_template_path = config.get('resume_template_path', '')
+                self.first_run = config.get('first_run', True)  # Default to True if not set
         except FileNotFoundError:
             self.resume_template_path = ''
+            self.first_run = True  # If config doesn't exist, it's the first run
 
     def save_config(self):
         config = {
             'resume_template_path': self.resume_template_path,
+            'first_run': False  # Set to False after first run
             # Add other configurations if needed
         }
         with open('config.json', 'w') as f:
             json.dump(config, f)
+
+    def check_first_run(self):
+        if self.first_run:
+            # Show the toast notification
+            toast = Toast("Welcome to Application Viewer! Check the Help menu for instructions.", parent=self)
+            toast.show()
+            # Optionally, show the instructions dialog immediately
+            instructions = InstructionsDialog()
+            instructions.exec_()
+            # Update the config to indicate that the first run has been completed
+            self.first_run = False
+            self.save_config()
 
     def create_widgets(self):
         layout = QHBoxLayout()
@@ -118,6 +230,7 @@ class ApplicationViewer(QWidget):
         self.menu_bar = QMenuBar(self)
         file_menu = self.menu_bar.addMenu('File')
         edit_menu = self.menu_bar.addMenu('Edit')
+        help_menu = self.menu_bar.addMenu('Help')  # Added Help menu
 
         # Add "Generate Applications" action
         generate_applications_action = QAction('Generate Applications', self)
@@ -133,6 +246,16 @@ class ApplicationViewer(QWidget):
         edit_resume_action = QAction('Edit Resume Template', self)
         edit_resume_action.triggered.connect(self.edit_resume_template)
         edit_menu.addAction(edit_resume_action)
+
+        # Add "Instructions" action to Help menu
+        instructions_action = QAction('Instructions', self)
+        instructions_action.triggered.connect(self.show_instructions)
+        help_menu.addAction(instructions_action)
+
+        # Add "About" action to Help menu
+        about_action = QAction('About', self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
 
         # Main layout adjustments
         main_layout = QVBoxLayout()
@@ -251,8 +374,8 @@ class ApplicationViewer(QWidget):
         details_layout.addWidget(self.education_label)
         self.education_text = QTextEdit()
         self.education_text.setReadOnly(True)
-        self.education_text.setText(applicant_info.get('education', ''))
         self.education_text.setFixedHeight(40)
+        self.education_text.setText(applicant_info.get('education', ''))
         details_layout.addWidget(self.education_text)
         self.copy_education_button = QPushButton('Copy Education to Clipboard')
         self.copy_education_button.clicked.connect(self.copy_education)
@@ -602,6 +725,21 @@ class ApplicationViewer(QWidget):
             progress_dialog.close()
             traceback.print_exc()
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
+
+    def show_instructions(self):
+        """Display the instructions dialog."""
+        instructions = InstructionsDialog()
+        instructions.exec_()
+
+    def show_about(self):
+        """Display the about dialog."""
+        about_text = """
+        <h2>Application Viewer</h2>
+        <p>Version 1.0</p>
+        <p>Developed by Robert Neyrinck</p>
+        <p>This application helps you manage and tailor your job applications efficiently.</p>
+        """
+        QMessageBox.about(self, "About Application Viewer", about_text)
 
 
 class ResumeEditor(QWidget):
