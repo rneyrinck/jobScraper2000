@@ -1,0 +1,22 @@
+{your_name}
+{your_address}
+{your_city_state_zip}
+{your_email}
+{your_phone}
+
+{date}
+
+{hiring_manager_name}
+{company_name}
+{company_address}
+{company_city_state_zip}
+
+Dear {hiring_manager_name},
+
+I am writing to express my interest in the {job_title} position at {company_name}. {skills_sentence}
+
+Thank you for considering my application.
+
+Sincerely,
+
+{your_name}

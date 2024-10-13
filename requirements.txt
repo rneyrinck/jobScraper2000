@@ -1,0 +1,6 @@
+pandas
+PyQt5
+requests
+spacy
+python-docx
+beautifulsoup4
